@@ -261,13 +261,13 @@ function patch() {
 
 # Compile using ninja.
 #
-# $1 The output directory, 'out/$TARGET_CPU/Debug', or 'out/$TARGET_CPU/Release'
+# $1 The output directory, 'out/$TARGET_OS-$TARGET_CPU/Debug', or 'out/$TARGET_OS-$TARGET_CPU/Release'
 # $2 Additional gn arguments
 function compile::ninja() {
   local outputdir="$1"
   local gn_args="$2"
 
-  echo "Generating project files with: $gn_args"
+  echo "Generating project files at $outputdir with: $gn_args"
   gn gen $outputdir --args="$gn_args"
   pushd $outputdir >/dev/null
     ninja -C .
@@ -438,12 +438,12 @@ function compile() {
   fi
 
   pushd $outdir/src >/dev/null
-    compile::ninja "out/$TARGET_CPU/Debug" "$common_args $target_args is_debug=true"
-    compile::ninja "out/$TARGET_CPU/Release" "$common_args $target_args is_debug=false symbol_level=0 enable_nacl=false"
+    compile::ninja "out/$target_os-$target_cpu/Debug" "$common_args $target_args is_debug=true"
+    compile::ninja "out/$target_os-$target_cpu/Release" "$common_args $target_args is_debug=false symbol_level=0"
 
     if [ $COMBINE_LIBRARIES = 1 ]; then
-      combine::static $platform "out/$TARGET_CPU/Debug" libwebrtc_full
-      combine::static $platform "out/$TARGET_CPU/Release" libwebrtc_full
+      combine::static $platform "out/$target_os-$target_cpu/Debug" libwebrtc_full
+      combine::static $platform "out/$target_os-$target_cpu/Release" libwebrtc_full
     fi
   popd >/dev/null
 }
@@ -479,11 +479,15 @@ function package() {
     pushd src >/dev/null
 
       # Find and copy header files
-      find webrtc -name *.h -exec $CP --parents '{}' $outdir/$label/include ';'
+      find api audio call common_audio common_video examples logging media \
+        modules ortc p2p pc rtc_base rtc_tools sdk stats system_wrappers \
+        test video voice_engine -name "*.h" \
+        -exec $CP --parents '{}' $outdir/$label/include ';'
+      find . -maxdepth 0 -name "*.h" -exec $CP --parents '{}' $outdir/$label/include ';'
 
       # Find and copy dependencies
       # The following build dependencies were excluded: gflags, ffmpeg, openh264, openmax_dl, winsdk_samples, yasm
-      find third_party -name *.h -o -name README -o -name LICENSE -o -name COPYING | \
+      find third_party -name "*.h" -o -name README -o -name LICENSE -o -name COPYING | \
         grep -E 'boringssl|expat/files|jsoncpp/source/json|libjpeg|libjpeg_turbo|libsrtp|libyuv|libvpx|opus|protobuf|usrsctp/usrsctpout/usrsctpout' | \
         grep -v /third_party | \
         xargs -I '{}' $CP --parents '{}' $outdir/$label/include
@@ -492,7 +496,8 @@ function package() {
     # Find and copy libraries
     configs="Debug Release"
     for cfg in $configs; do
-      pushd src/out/$TARGET_CPU/$cfg >/dev/null
+      mkdir -p $outdir/$label/lib/$TARGET_CPU/$cfg
+      pushd src/out/$TARGET_OS-$TARGET_CPU/$cfg >/dev/null
         if [ $COMBINE_LIBRARIES = 1 ]; then
           find . -name '*.so' -o -name '*.dll' -o -name '*.lib' -o -name '*.a' -o -name '*.jar' | \
             grep -E 'webrtc_full' | \
